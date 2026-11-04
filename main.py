@@ -1,114 +1,107 @@
 import os
-import edge_tts
 import asyncio
 import threading
 from flask import Flask
-from gtts import gTTS
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+import telebot
+from telebot import types
+import edge_tts
 
-# 1. Railway Keep-Alive Server
-server = Flask(__name__)
+# 1. Railway Keep-Alive సర్వర్
+app = Flask(__name__)
 
-@server.route('/')
+@app.route('/')
 def home():
-    return "Telugu TTS Bot is Running Live!"
+    return "STORYMAX Male/Female TTS Bot is Live!"
 
-def run_flask():
+def run_web():
     port = int(os.environ.get("PORT", 8080))
-    server.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
 
-# 2. Bot Configuration
+# 2. టెలిగ్రామ్ బాట్ సెటప్
 BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
+bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
+
+# తెలుగు వాయిస్‌లు
 VOICES = {
     "female": "te-IN-ShrutiNeural",
     "male": "te-IN-MohanNeural"
 }
 
-user_voices = {}
+user_selected_voice = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [
-            InlineKeyboardButton("👩 Female Voice", callback_data="voice_female"),
-            InlineKeyboardButton("👨 Male Voice", callback_data="voice_male")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
+@bot.message_handler(commands=['start'])
+def start_cmd(message):
+    chat_id = message.chat.id
+    welcome_text = (
         "నమస్కారం! 👋\n\n"
-        "నేను Telugu Story ని Audio గా మార్చే Bot.\n\n"
-        "ముందుగా Voice select చేసుకోండి:",
-        reply_markup=reply_markup
+        "నేను తెలుగు కథలను ఆడియోగా మార్చే బాట్.\n\n"
+        "మీకు ఏ గొంతులో కథ కావాలో క్రింది బటన్ ద్వారా ఎంచుకోండి:"
     )
+    markup = types.InlineKeyboardMarkup()
+    btn_female = types.InlineKeyboardButton("👩 Female Voice (Shruti)", callback_data="voice_female")
+    btn_male = types.InlineKeyboardButton("👨 Male Voice (Mohan)", callback_data="voice_male")
+    markup.add(btn_female, btn_male)
 
-async def voice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    bot.send_message(chat_id, welcome_text, reply_markup=markup)
 
-    user_id = query.from_user.id
-    if query.data == "voice_female":
-        user_voices[user_id] = "female"
-        await query.edit_message_text("✅ Female voice select చేశారు.\n\nఇప్పుడు మీ Story text పంపండి.")
-    else:
-        user_voices[user_id] = "male"
-        await query.edit_message_text("✅ Male voice select చేశారు.\n\nఇప్పుడు మీ Story text పంపండి.")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("voice_"))
+def handle_voice_selection(call):
+    chat_id = call.message.chat.id
+    selected = call.data.replace("voice_", "")
+    user_selected_voice[chat_id] = selected
+    
+    bot.answer_callback_query(call.id)
+    voice_name = "👩 Female Voice (Shruti)" if selected == "female" else "👨 Male Voice (Mohan)"
+    bot.send_message(chat_id, f"✅ మీరు *{voice_name}* ఎంచుకున్నారు.\n\nఇప్పుడు మీ తెలుగు స్టోరీ టెక్స్ట్‌ను ఇక్కడ మెసేజ్ పంపండి.", parse_mode="Markdown")
 
-async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    text = update.message.text.strip()
+async def generate_edge_audio(text, voice, output_path):
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_path)
 
-    if len(text) < 10:
-        await update.message.reply_text("దయచేసి కాస్త పొడవైన story పంపండి.")
+@bot.message_handler(func=lambda msg: msg.text and not msg.text.startswith('/'))
+def convert_to_audio(message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+
+    if len(text) < 5:
+        bot.reply_to(message, "దయచేసి కాస్త పొడవైన కథ టెక్స్ట్ పంపండి.")
         return
 
-    voice_type = user_voices.get(user_id, "female")
-    voice = VOICES[voice_type]
+    # యూజర్ వాయిస్ ఎంచుకోకపోతే డీఫాల్ట్‌గా ఫిమేల్ వాయిస్ సెట్ అవుతుంది
+    chosen_type = user_selected_voice.get(chat_id, "female")
+    voice_id = VOICES[chosen_type]
 
-    msg = await update.message.reply_text("⏳ Audio create అవుతోంది... దయచేసి wait చేయండి.")
-
-    final_file = f"final_{user_id}.mp3"
-
-    try:
-        # Edge TTS ప్రయత్నం
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(final_file)
-    except Exception:
-        # 403 లేదా నెట్‌వర్క్ ఎర్రర్ వస్తే ఆటోమేటిక్‌గా gTTS కి మారడం
-        try:
-            tts = gTTS(text=text, lang='te')
-            tts.save(final_file)
-        except Exception as gtts_err:
-            await msg.edit_text(f"❌ Error వచ్చింది: {str(gtts_err)}")
-            return
+    status_msg = bot.reply_to(message, "⏳ ఆడియో తయారవుతోంది... దయచేసి ఒక్క క్షణం ఆగండి.")
+    temp_file = f"story_{chat_id}_{message.message_id}.mp3"
 
     try:
-        with open(final_file, "rb") as audio_fp:
-            await update.message.reply_audio(
+        # Edge TTS ఆడియో జనరేట్ చేయడం
+        asyncio.run(generate_edge_audio(text, voice_id, temp_file))
+
+        performer_title = "Female Voice (Shruti)" if chosen_type == "female" else "Male Voice (Mohan)"
+
+        with open(temp_file, 'rb') as audio_fp:
+            bot.send_audio(
+                chat_id=chat_id,
                 audio=audio_fp,
-                title="Telugu Story",
-                performer="STORYMAX"
+                title="Telugu Audio Story",
+                performer=performer_title
             )
 
-        if os.path.exists(final_file):
-            os.remove(final_file)
-        await msg.delete()
+        bot.delete_message(chat_id, status_msg.message_id)
 
     except Exception as e:
-        await msg.edit_text(f"❌ Error వచ్చింది: {str(e)}")
+        bot.edit_message_text(f"❌ Error వచ్చింది: {str(e)}", chat_id=chat_id, message_id=status_msg.message_id)
 
-def main():
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(voice_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
-
-    print("Bot is starting...")
-    application.run_polling(drop_pending_updates=True, close_loop=False)
+    finally:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
 
 if __name__ == "__main__":
-    main()
+    threading.Thread(target=run_web, daemon=True).start()
+    bot.infinity_polling(skip_pending=True)

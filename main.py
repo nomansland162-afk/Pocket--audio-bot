@@ -7,8 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
+BOT_TOKEN ="9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 # Telugu Voices
 VOICES = {
     "female": "te-IN-ShrutiNeural",

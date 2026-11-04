@@ -16,7 +16,7 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 # Mee Bot Token
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGiZH6B-YP-Y"
+BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # User session data (Episode count track cheyadaniki)

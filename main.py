@@ -6,27 +6,22 @@ import telebot
 from telebot import types
 import edge_tts
 
-# 1. Railway Keep-Alive సర్వర్
+# 1. Railway Keep-Alive Web Server
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "STORYMAX Male/Female TTS Bot is Live!"
+    return "STORYMAX TTS Bot is Running Live!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-# 2. టెలిగ్రామ్ బాట్ సెటప్
+# 2. Telegram Bot Configuration
 BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
-try:
-    bot.remove_webhook()
-except Exception:
-    pass
-
-# తెలుగు వాయిస్‌లు
+# Telugu Voices
 VOICES = {
     "female": "te-IN-ShrutiNeural",
     "male": "te-IN-MohanNeural"
@@ -38,9 +33,9 @@ user_selected_voice = {}
 def start_cmd(message):
     chat_id = message.chat.id
     welcome_text = (
-        "నమస్కారం! 👋\n\n"
-        "నేను తెలుగు కథలను ఆడియోగా మార్చే బాట్.\n\n"
-        "మీకు ఏ గొంతులో కథ కావాలో క్రింది బటన్ ద్వారా ఎంచుకోండి:"
+        "Namaskaram! 👋\n\n"
+        "Nenu Telugu Story ni Audio ga marche Bot.\n\n"
+        "Meeku ye voice lo katha kavalo kinda unna button click chesi select cheskondi:"
     )
     markup = types.InlineKeyboardMarkup()
     btn_female = types.InlineKeyboardButton("👩 Female Voice (Shruti)", callback_data="voice_female")
@@ -57,7 +52,11 @@ def handle_voice_selection(call):
     
     bot.answer_callback_query(call.id)
     voice_name = "👩 Female Voice (Shruti)" if selected == "female" else "👨 Male Voice (Mohan)"
-    bot.send_message(chat_id, f"✅ మీరు *{voice_name}* ఎంచుకున్నారు.\n\nఇప్పుడు మీ తెలుగు స్టోరీ టెక్స్ట్‌ను ఇక్కడ మెసేజ్ పంపండి.", parse_mode="Markdown")
+    bot.send_message(
+        chat_id, 
+        f"✅ Meeru *{voice_name}* select cheskunnaru.\n\nIppudu mee Telugu story text ni ikkada message pampandi.", 
+        parse_mode="Markdown"
+    )
 
 async def generate_edge_audio(text, voice, output_path):
     communicate = edge_tts.Communicate(text, voice)
@@ -69,18 +68,18 @@ def convert_to_audio(message):
     text = message.text.strip()
 
     if len(text) < 5:
-        bot.reply_to(message, "దయచేసి కాస్త పొడవైన కథ టెక్స్ట్ పంపండి.")
+        bot.reply_to(message, "Dayachesi konchem pedda katha text pampandi.")
         return
 
-    # యూజర్ వాయిస్ ఎంచుకోకపోతే డీఫాల్ట్‌గా ఫిమేల్ వాయిస్ సెట్ అవుతుంది
+    # User voice select cheskokapothe default ga Female voice vasthundi
     chosen_type = user_selected_voice.get(chat_id, "female")
     voice_id = VOICES[chosen_type]
 
-    status_msg = bot.reply_to(message, "⏳ ఆడియో తయారవుతోంది... దయచేసి ఒక్క క్షణం ఆగండి.")
+    status_msg = bot.reply_to(message, "⏳ Audio tayaravuthondi... Dayachesi oka kshanam aagandi.")
     temp_file = f"story_{chat_id}_{message.message_id}.mp3"
 
     try:
-        # Edge TTS ఆడియో జనరేట్ చేయడం
+        # Edge TTS dwara audio create cheyadam
         asyncio.run(generate_edge_audio(text, voice_id, temp_file))
 
         performer_title = "Female Voice (Shruti)" if chosen_type == "female" else "Male Voice (Mohan)"
@@ -96,12 +95,21 @@ def convert_to_audio(message):
         bot.delete_message(chat_id, status_msg.message_id)
 
     except Exception as e:
-        bot.edit_message_text(f"❌ Error వచ్చింది: {str(e)}", chat_id=chat_id, message_id=status_msg.message_id)
+        bot.edit_message_text(f"❌ Error vachindi: {str(e)}", chat_id=chat_id, message_id=status_msg.message_id)
 
     finally:
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
 if __name__ == "__main__":
+    # Railway keep-alive web server background thread lo run avthundi
     threading.Thread(target=run_web, daemon=True).start()
-    bot.infinity_polling(skip_pending=True)
+    
+    # Patha polling conflicts emaina unte clear cheyadam
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+    # Bot uninterrupted infinity polling
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)

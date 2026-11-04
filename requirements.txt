@@ -1,4 +1,3 @@
 pyTelegramBotAPI
 eyed3
 flask
-static-ffmpeg

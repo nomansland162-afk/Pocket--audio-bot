@@ -2,9 +2,13 @@ import os
 import re
 import subprocess
 import telebot
+import static_ffmpeg
 from eyed3 import load
 from threading import Thread
 from flask import Flask
+
+# static-ffmpeg పాత్‌లను సిస్టమ్‌లో యాడ్ చేయడం
+static_ffmpeg.add_paths()
 
 app = Flask(__name__)
 
@@ -16,10 +20,9 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-BOT_TOKEN ="9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
+BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Conflict raakunda old session ni clean cheyadam
 try:
     bot.remove_webhook()
 except Exception:
@@ -31,7 +34,7 @@ user_settings = {}
 def start_cmd(message):
     chat_id = message.chat.id
     user_settings[chat_id] = {"count": 1, "story": "YODHA"}
-    bot.reply_to(message, "Bot ready! Audio files ni pampandi, 2x speed and serial order tags tho vasthayi.")
+    bot.reply_to(message, "బాట్ సిద్ధంగా ఉంది! ఆడియో ఫైల్స్ పంపండి, 2x స్పీడ్ మరియు సీరియల్ నంబర్ ట్యాగ్‌లతో ప్రాసెస్ అవుతాయి.")
 
 @bot.message_handler(commands=['setstory'])
 def set_story(message):
@@ -41,7 +44,7 @@ def set_story(message):
         if chat_id not in user_settings:
             user_settings[chat_id] = {"count": 1}
         user_settings[chat_id]["story"] = title
-        bot.reply_to(message, f"Story Name: {title}")
+        bot.reply_to(message, f"కథ పేరు సెట్ అయింది: {title}")
 
 @bot.message_handler(commands=['setep'])
 def set_ep(message):
@@ -51,9 +54,9 @@ def set_ep(message):
         if chat_id not in user_settings:
             user_settings[chat_id] = {"story": "YODHA"}
         user_settings[chat_id]["count"] = val
-        bot.reply_to(message, f"Next Episode: {val}")
+        bot.reply_to(message, f"తర్వాతి ఎపిసోడ్ నంబర్: {val}")
     except:
-        bot.reply_to(message, "Correct number ivvandi. Ex: /setep 1")
+        bot.reply_to(message, "సరైన నంబర్ ఇవ్వండి. ఉదా: /setep 1")
 
 @bot.message_handler(content_types=['audio', 'document'])
 def handle_audio(message):
@@ -82,7 +85,7 @@ def handle_audio(message):
         ep_num = user_settings[chat_id]["count"]
         user_settings[chat_id]["count"] += 1
 
-    status_msg = bot.reply_to(message, f"Converting Ep {ep_num:02d} to 2x speed...")
+    status_msg = bot.reply_to(message, f"Ep {ep_num} ని 2x స్పీడ్‌లోకి మారుస్తున్నాను... కొద్ది సెకన్లు ఆగండి.")
 
     raw_input = f"raw_{chat_id}_{message.message_id}.mp3"
     speed_output = f"speed_{chat_id}_{message.message_id}.mp3"
@@ -93,6 +96,7 @@ def handle_audio(message):
         with open(raw_input, 'wb') as f:
             f.write(downloaded)
 
+        # 2x Speed conversion
         cmd = f'ffmpeg -y -i "{raw_input}" -filter:a "atempo=2.0" -vn "{speed_output}"'
         subprocess.run(cmd, shell=True, check=True)
 

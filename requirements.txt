@@ -1,5 +1,3 @@
-pyTelegramBotAPI
-eyed3
-flask
-requests
-beautifulsoup4
+python-telegram-bot==21.6
+edge-tts==6.1.12
+python-dotenv==1.0.1

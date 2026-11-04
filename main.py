@@ -87,6 +87,8 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Error వచ్చింది: {str(e)}")
 
 def main():
+    threading.Thread(target=run_flask, daemon=True).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -94,7 +96,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
 
     print("Bot started...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True, close_loop=False)
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()
+    

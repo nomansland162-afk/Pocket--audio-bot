@@ -1,106 +1,103 @@
 import os
-import queue
-import threading
-import requests
-from bs4 import BeautifulSoup
-import telebot
-from telebot import types
-from flask import Flask
+import edge_tts
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from dotenv import load_dotenv
 
-# 1. Flask Web Server
-app = Flask(__name__)
+load_dotenv()
 
-@app.route('/')
-def home():
-    return "Bot is Running Live!"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-
-# 2. Telegram Bot Setup
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
-bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
-
-BRAND_NAME = "NRVA Network"
-
-# Database structure
-stories_db = {
-    "yodha": {
-        "title": "యోధ (YODHA)",
-        "poster": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600",
-        "episodes": []
-    }
+# Telugu Voices
+VOICES = {
+    "female": "te-IN-ShrutiNeural",
+    "male": "te-IN-MohanNeural"
 }
 
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
-    first_name = message.from_user.first_name or "User"
-    text = (
-        f"🎧 *Welcome, {first_name}!* \n\n"
-        "Pocket FM ఆడియో కథలను పొందండి.\n\n"
-        "కథ వినడానికి కింద ఉన్న బటన్ నొక్కండి లేదా `YODHA` అని టైప్ చేయండి.\n\n"
-        f"🔥 Powered by *{BRAND_NAME}*"
-    )
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(types.KeyboardButton("🔥 YODHA"))
-    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+user_voices = {}  # user_id: voice
 
-@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text.lower() for k in ["yodha", "యోధ"]))
-def search_story(message):
-    chat_id = message.chat.id
-    story = stories_db.get("yodha")
-    ep_count = len(story["episodes"])
-    
-    caption_text = (
-        f"🎬 *కథ:* {story['title']}\n"
-        f"🎧 *మొత్తం ఎపిసోడ్లు:* {ep_count}\n"
-        f"🔥 *నెట్‌వర్క్:* {BRAND_NAME}\n\n"
-        "ఎపిసోడ్లను డౌన్‌లోడ్ చేసుకోవడానికి కింది బటన్ నొక్కండి:"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [
+            InlineKeyboardButton("👩 Female Voice", callback_data="voice_female"),
+            InlineKeyboardButton("👨 Male Voice", callback_data="voice_male")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "నమస్కారం! 👋\n\n"
+        "నేను Telugu Story ని Audio గా మార్చే Bot.\n\n"
+        "ముందుగా Voice select చేసుకోండి:",
+        reply_markup=reply_markup
     )
 
-    markup = types.InlineKeyboardMarkup()
-    btn_get = types.InlineKeyboardButton("📥 Download Episodes", callback_data="get_yodha")
-    markup.add(btn_get)
+async def voice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-    try:
-        bot.send_photo(chat_id, story["poster"], caption=caption_text, parse_mode="Markdown", reply_markup=markup)
-    except Exception:
-        bot.send_message(chat_id, caption_text, parse_mode="Markdown", reply_markup=markup)
+    user_id = query.from_user.id
+    if query.data == "voice_female":
+        user_voices[user_id] = "female"
+        await query.edit_message_text("✅ Female voice select చేశారు.\n\nఇప్పుడు మీ Story text పంపండి.")
+    else:
+        user_voices[user_id] = "male"
+        await query.edit_message_text("✅ Male voice select చేశారు.\n\nఇప్పుడు మీ Story text పంపండి.")
 
-@bot.callback_query_handler(func=lambda call: call.data == "get_yodha")
-def send_episodes_callback(call):
-    chat_id = call.message.chat.id
-    story = stories_db.get("yodha")
-    
-    if not story["episodes"]:
-        bot.answer_callback_query(call.id, "ఎపిసోడ్లు త్వరలోనే అప్‌లోడ్ చేయబడతాయి!")
-        bot.send_message(chat_id, "⚠️ ప్రస్తుతం ఎపిసోడ్లు లేవు. ఆడియోలు యాడ్ చేసిన తర్వాత ఇక్కడ కనిపిస్తాయి.")
+async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
+
+    if len(text) < 10:
+        await update.message.reply_text("దయచేసి కాస్త పొడవైన story పంపండి.")
         return
 
-    bot.answer_callback_query(call.id, "ఎపిసోడ్లు పంపుతున్నాను...")
-    for ep_id in story["episodes"]:
-        try:
-            bot.send_audio(chat_id, ep_id, performer=BRAND_NAME)
-        except Exception:
-            pass
+    voice_type = user_voices.get(user_id, "female")
+    voice = VOICES[voice_type]
 
-@bot.message_handler(content_types=['audio'])
-def handle_audio_save(message):
-    file_id = message.audio.file_id
-    stories_db["yodha"]["episodes"].append(file_id)
-    total = len(stories_db["yodha"]["episodes"])
-    bot.reply_to(message, f"✅ Episode {total} యాడ్ అయింది! (మొత్తం ఎపిసోడ్లు: {total})")
+    msg = await update.message.reply_text("⏳ Audio create అవుతోంది... దయచేసి wait చేయండి.")
 
-def start_bot():
     try:
-        bot.remove_webhook()
-    except Exception:
-        pass
-    bot.infinity_polling(skip_pending=True)
+        # Long text ని chunks గా విడగొట్టడం
+        chunks = [text[i:i+400] for i in range(0, len(text), 400)]
+        audio_files = []
+
+        for i, chunk in enumerate(chunks):
+            communicate = edge_tts.Communicate(chunk, voice)
+            file_name = f"temp_{user_id}_{i}.mp3"
+            await communicate.save(file_name)
+            audio_files.append(file_name)
+
+        # అన్ని chunks ని ఒకే file గా కలపడం
+        final_file = f"final_{user_id}.mp3"
+        with open(final_file, "wb") as outfile:
+            for f in audio_files:
+                with open(f, "rb") as infile:
+                    outfile.write(infile.read())
+                os.remove(f)
+
+        await update.message.reply_audio(
+            audio=open(final_file, "rb"),
+            title="Telugu Story",
+            performer="TTS Bot"
+        )
+
+        os.remove(final_file)
+        await msg.delete()
+
+    except Exception as e:
+        await msg.edit_text(f"❌ Error వచ్చింది: {str(e)}")
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(voice_callback))
+    app.add_handler(MessageHandler(filters.TEXT & \~filters.COMMAND, text_to_speech))
+
+    print("Bot started...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    # Flask ను ప్రత్యేక థ్రెడ్‌లో రన్ చేయడం
-    threading.Thread(target=run_flask, daemon=True).start()
-    # బాట్ పోలింగ్ స్టార్ట్ చేయడం
-    start_bot()
+    main()

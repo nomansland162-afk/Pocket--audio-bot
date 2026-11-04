@@ -18,7 +18,7 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 # 2. Telegram Bot Configuration
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
+BOT_TOKEN = "9208695742:AAH98SOyNqAE0DWEIqBmNUusOSjMogUXESs"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 # Telugu Voices

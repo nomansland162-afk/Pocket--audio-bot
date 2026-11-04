@@ -1,20 +1,17 @@
 import os
 import re
-import subprocess
+import queue
+import threading
 import telebot
-import static_ffmpeg
 from eyed3 import load
-from threading import Thread
 from flask import Flask
 
-# static-ffmpeg పాత్‌లను సిస్టమ్‌లో యాడ్ చేయడం
-static_ffmpeg.add_paths()
-
+# Flask keep-alive web server
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Tag Editor & 2x Speed Bot is Live!"
+    return "Original Audio Tag Editor is Live!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -29,12 +26,18 @@ except Exception:
     pass
 
 user_settings = {}
+# Order miss avvakunda okadanitharvatha okati process cheyadaniki Queue
+task_queue = queue.Queue()
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     chat_id = message.chat.id
     user_settings[chat_id] = {"count": 1, "story": "YODHA"}
-    bot.reply_to(message, "బాట్ సిద్ధంగా ఉంది! ఆడియో ఫైల్స్ పంపండి, 2x స్పీడ్ మరియు సీరియల్ నంబర్ ట్యాగ్‌లతో ప్రాసెస్ అవుతాయి.")
+    bot.reply_to(message, "🎧 *Batch Episode Organizer Ready!*\n\n"
+                          "1. Katha peru marchadaniki: `/setstory YODHA`\n"
+                          "2. Start number set cheyadaniki: `/setep 1`\n\n"
+                          "Audio files ni pampandi, original quality lo orderwise serial ga tags vesi pampisthanu.",
+                 parse_mode="Markdown")
 
 @bot.message_handler(commands=['setstory'])
 def set_story(message):
@@ -44,7 +47,7 @@ def set_story(message):
         if chat_id not in user_settings:
             user_settings[chat_id] = {"count": 1}
         user_settings[chat_id]["story"] = title
-        bot.reply_to(message, f"కథ పేరు సెట్ అయింది: {title}")
+        bot.reply_to(message, f"✅ Story Name set ayindi: *{title}*", parse_mode="Markdown")
 
 @bot.message_handler(commands=['setep'])
 def set_ep(message):
@@ -54,9 +57,77 @@ def set_ep(message):
         if chat_id not in user_settings:
             user_settings[chat_id] = {"story": "YODHA"}
         user_settings[chat_id]["count"] = val
-        bot.reply_to(message, f"తర్వాతి ఎపిసోడ్ నంబర్: {val}")
+        bot.reply_to(message, f"✅ Next Episode number: *{val}*", parse_mode="Markdown")
     except:
-        bot.reply_to(message, "సరైన నంబర్ ఇవ్వండి. ఉదా: /setep 1")
+        bot.reply_to(message, "Correct number ivvandi. Ex: `/setep 1`", parse_mode="Markdown")
+
+# Worker thread: Files ni line ga oka order lo process chesthundi
+def process_queue():
+    while True:
+        task = task_queue.get()
+        if task is None:
+            break
+        
+        chat_id, file_id, original_name, msg_id = task
+        if chat_id not in user_settings:
+            user_settings[chat_id] = {"count": 1, "story": "YODHA"}
+
+        story_name = user_settings[chat_id]["story"]
+
+        # File name lo number unte direct ga adhe number theeskuntundi (Order miss avvadu)
+        found_nums = re.findall(r'\b\d+\b', original_name)
+        if found_nums:
+            ep_num = int(found_nums[0])
+        else:
+            ep_num = user_settings[chat_id]["count"]
+            user_settings[chat_id]["count"] += 1
+
+        status_msg = bot.send_message(chat_id, f"Processing Ep {ep_num}...")
+
+        temp_file = f"audio_{chat_id}_{msg_id}.mp3"
+
+        try:
+            # File download
+            file_info = bot.get_file(file_id)
+            downloaded = bot.download_file(file_info.file_path)
+            with open(temp_file, 'wb') as f:
+                f.write(downloaded)
+
+            formatted_title = f"{story_name} - Episode {ep_num:02d}"
+
+            # Original file meeda direct ga tags edit cheyadam (No conversion, 100% original quality)
+            try:
+                audio_tag = load(temp_file)
+                if audio_tag.tag is None:
+                    audio_tag.initTag()
+                audio_tag.tag.title = formatted_title
+                audio_tag.tag.artist = story_name
+                audio_tag.tag.album = story_name
+                audio_tag.tag.track_num = ep_num
+                audio_tag.tag.save()
+            except Exception:
+                pass
+
+            # Send original audio back
+            with open(temp_file, 'rb') as final_audio:
+                bot.send_audio(
+                    chat_id=chat_id,
+                    audio=final_audio,
+                    title=formatted_title,
+                    performer=story_name,
+                    caption=f"🎬 *{story_name}*\n🎧 Episode: *{ep_num:02d}*",
+                    parse_mode="Markdown"
+                )
+
+            bot.delete_message(chat_id, status_msg.message_id)
+
+        except Exception as err:
+            bot.edit_message_text(f"Error: {str(err)}", chat_id=chat_id, message_id=status_msg.message_id)
+
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            task_queue.task_done()
 
 @bot.message_handler(content_types=['audio', 'document'])
 def handle_audio(message):
@@ -73,66 +144,10 @@ def handle_audio(message):
     else:
         return
 
-    if chat_id not in user_settings:
-        user_settings[chat_id] = {"count": 1, "story": "YODHA"}
-
-    story_name = user_settings[chat_id]["story"]
-
-    found_nums = re.findall(r'\b\d+\b', original_name)
-    if found_nums:
-        ep_num = int(found_nums[0])
-    else:
-        ep_num = user_settings[chat_id]["count"]
-        user_settings[chat_id]["count"] += 1
-
-    status_msg = bot.reply_to(message, f"Ep {ep_num} ని 2x స్పీడ్‌లోకి మారుస్తున్నాను... కొద్ది సెకన్లు ఆగండి.")
-
-    raw_input = f"raw_{chat_id}_{message.message_id}.mp3"
-    speed_output = f"speed_{chat_id}_{message.message_id}.mp3"
-
-    try:
-        file_info = bot.get_file(file_id)
-        downloaded = bot.download_file(file_info.file_path)
-        with open(raw_input, 'wb') as f:
-            f.write(downloaded)
-
-        # 2x Speed conversion
-        cmd = f'ffmpeg -y -i "{raw_input}" -filter:a "atempo=2.0" -vn "{speed_output}"'
-        subprocess.run(cmd, shell=True, check=True)
-
-        formatted_title = f"{story_name} - Episode {ep_num:02d}"
-        try:
-            audio_tag = load(speed_output)
-            if audio_tag.tag is None:
-                audio_tag.initTag()
-            audio_tag.tag.title = formatted_title
-            audio_tag.tag.artist = story_name
-            audio_tag.tag.album = story_name
-            audio_tag.tag.track_num = ep_num
-            audio_tag.tag.save()
-        except Exception:
-            pass
-
-        with open(speed_output, 'rb') as final_audio:
-            bot.send_audio(
-                chat_id=chat_id,
-                audio=final_audio,
-                title=formatted_title,
-                performer=story_name,
-                caption=f"⚡ {story_name} - Ep {ep_num:02d} (2x Speed)"
-            )
-
-        bot.delete_message(chat_id, status_msg.message_id)
-
-    except Exception as err:
-        bot.edit_message_text(f"Error: {str(err)}", chat_id=chat_id, message_id=status_msg.message_id)
-
-    finally:
-        if os.path.exists(raw_input):
-            os.remove(raw_input)
-        if os.path.exists(speed_output):
-            os.remove(speed_output)
+    # Queue lo pettadam valla anni files varasaga line lo process avthayi
+    task_queue.put((chat_id, file_id, original_name, message.message_id))
 
 if __name__ == "__main__":
-    Thread(target=run_web).start()
+    threading.Thread(target=run_web, daemon=True).start()
+    threading.Thread(target=process_queue, daemon=True).start()
     bot.infinity_polling(skip_pending=True, timeout=20)

@@ -92,7 +92,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(voice_callback))
-    app.add_handler(MessageHandler(filters.TEXT & \~filters.COMMAND, text_to_speech))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
 
     print("Bot started...")
     app.run_polling()

@@ -16,7 +16,7 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGiZH6B-YP-Y"
+BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-YY"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 user_settings = {}

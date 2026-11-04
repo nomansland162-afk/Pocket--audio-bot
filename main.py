@@ -16,16 +16,22 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-YY"
+BOT_TOKEN ="9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# Conflict raakunda old session ni clean cheyadam
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
 
 user_settings = {}
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     chat_id = message.chat.id
-    user_settings[chat_id] = {"count": 1, "story": "YODHA", "speed": "2.0"}
-    bot.reply_to(message, "Bot ready! Audio files ni automatic ga 2x speed tho convert chesi serial order lo tags vestundi.")
+    user_settings[chat_id] = {"count": 1, "story": "YODHA"}
+    bot.reply_to(message, "Bot ready! Audio files ni pampandi, 2x speed and serial order tags tho vasthayi.")
 
 @bot.message_handler(commands=['setstory'])
 def set_story(message):
@@ -33,7 +39,7 @@ def set_story(message):
     title = message.text.replace("/setstory", "").strip()
     if title:
         if chat_id not in user_settings:
-            user_settings[chat_id] = {"count": 1, "speed": "2.0"}
+            user_settings[chat_id] = {"count": 1}
         user_settings[chat_id]["story"] = title
         bot.reply_to(message, f"Story Name: {title}")
 
@@ -43,7 +49,7 @@ def set_ep(message):
     try:
         val = int(message.text.replace("/setep", "").strip())
         if chat_id not in user_settings:
-            user_settings[chat_id] = {"story": "YODHA", "speed": "2.0"}
+            user_settings[chat_id] = {"story": "YODHA"}
         user_settings[chat_id]["count"] = val
         bot.reply_to(message, f"Next Episode: {val}")
     except:
@@ -65,11 +71,10 @@ def handle_audio(message):
         return
 
     if chat_id not in user_settings:
-        user_settings[chat_id] = {"count": 1, "story": "YODHA", "speed": "2.0"}
+        user_settings[chat_id] = {"count": 1, "story": "YODHA"}
 
     story_name = user_settings[chat_id]["story"]
 
-    # File name lo number unte adhe teesukuntundi (Order miss avvakunda)
     found_nums = re.findall(r'\b\d+\b', original_name)
     if found_nums:
         ep_num = int(found_nums[0])
@@ -83,17 +88,14 @@ def handle_audio(message):
     speed_output = f"speed_{chat_id}_{message.message_id}.mp3"
 
     try:
-        # Download
         file_info = bot.get_file(file_id)
         downloaded = bot.download_file(file_info.file_path)
         with open(raw_input, 'wb') as f:
             f.write(downloaded)
 
-        # 2x Speed conversion using FFmpeg
         cmd = f'ffmpeg -y -i "{raw_input}" -filter:a "atempo=2.0" -vn "{speed_output}"'
         subprocess.run(cmd, shell=True, check=True)
 
-        # Tags Editing
         formatted_title = f"{story_name} - Episode {ep_num:02d}"
         try:
             audio_tag = load(speed_output)
@@ -107,7 +109,6 @@ def handle_audio(message):
         except Exception:
             pass
 
-        # Send 2x Audio
         with open(speed_output, 'rb') as final_audio:
             bot.send_audio(
                 chat_id=chat_id,
@@ -130,4 +131,4 @@ def handle_audio(message):
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    bot.infinity_polling(skip_pending=True, timeout=20)

@@ -1,14 +1,25 @@
 import os
 import edge_tts
 import asyncio
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-from dotenv import load_dotenv
 
-load_dotenv()
+# 1. Railway Keep-Alive Server
+server = Flask(__name__)
 
-BOT_TOKEN ="9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
-# Telugu Voices
+@server.route('/')
+def home():
+    return "Telugu TTS Bot is Running Live!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    server.run(host="0.0.0.0", port=port)
+
+# 2. Bot Configuration
+BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
+
 VOICES = {
     "female": "te-IN-ShrutiNeural",
     "male": "te-IN-MohanNeural"
@@ -70,17 +81,20 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_file = f"final_{user_id}.mp3"
         with open(final_file, "wb") as outfile:
             for f in audio_files:
-                with open(f, "rb") as infile:
-                    outfile.write(infile.read())
-                os.remove(f)
+                if os.path.exists(f):
+                    with open(f, "rb") as infile:
+                        outfile.write(infile.read())
+                    os.remove(f)
 
-        await update.message.reply_audio(
-            audio=open(final_file, "rb"),
-            title="Telugu Story",
-            performer="TTS Bot"
-        )
+        with open(final_file, "rb") as audio_fp:
+            await update.message.reply_audio(
+                audio=audio_fp,
+                title="Telugu Story",
+                performer="TTS Bot"
+            )
 
-        os.remove(final_file)
+        if os.path.exists(final_file):
+            os.remove(final_file)
         await msg.delete()
 
     except Exception as e:
@@ -89,15 +103,13 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(voice_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(voice_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_to_speech))
-
-    print("Bot started...")
-    app.run_polling(drop_pending_updates=True, close_loop=False)
+    print("Bot is starting...")
+    application.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
     main()
-    

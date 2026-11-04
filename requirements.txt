@@ -1,3 +1,5 @@
 pyTelegramBotAPI
 eyed3
 flask
+requests
+beautifulsoup4

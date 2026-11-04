@@ -1,4 +1,3 @@
-python-telegram-bot==20.8
+pyTelegramBotAPI
 edge-tts>=6.1.12
-gTTS
 flask

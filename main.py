@@ -17,7 +17,7 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 # Telegram Bot Logic
-BOT_TOKEN =9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y
+BOT_TOKEN ="9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=['start'])

@@ -15,7 +15,7 @@ VOICES = {
     "male": "te-IN-MohanNeural"
 }
 
-user_voices = {}  # user_id: voice
+user_voices = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -59,7 +59,6 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ Audio create అవుతోంది... దయచేసి wait చేయండి.")
 
     try:
-        # Long text ని chunks గా విడగొట్టడం
         chunks = [text[i:i+400] for i in range(0, len(text), 400)]
         audio_files = []
 
@@ -69,7 +68,6 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await communicate.save(file_name)
             audio_files.append(file_name)
 
-        # అన్ని chunks ని ఒకే file గా కలపడం
         final_file = f"final_{user_id}.mp3"
         with open(final_file, "wb") as outfile:
             for f in audio_files:
@@ -99,5 +97,5 @@ def main():
     print("Bot started...")
     app.run_polling()
 
-if __name__ == "__main__":
+if name == "main":
     main()

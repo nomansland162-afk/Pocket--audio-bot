@@ -3,10 +3,11 @@ import edge_tts
 import asyncio
 import threading
 from flask import Flask
+from gtts import gTTS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# 1. Railway Keep-Alive Server
+# 1. Railway Keep-Alive సర్వర్
 server = Flask(__name__)
 
 @server.route('/')
@@ -17,7 +18,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     server.run(host="0.0.0.0", port=port)
 
-# 2. Bot Configuration
+# 2. బాట్ కాన్ఫిగరేషన్
 BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
 
 VOICES = {
@@ -68,29 +69,27 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("⏳ Audio create అవుతోంది... దయచేసి wait చేయండి.")
 
+    final_file = f"final_{user_id}.mp3"
+
     try:
-        chunks = [text[i:i+400] for i in range(0, len(text), 400)]
-        audio_files = []
+        # Edge TTS ట్రై చేయడం
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(final_file)
+    except Exception:
+        # Edge TTS సర్వర్ 403 ఇస్తే ఆటోమేటిక్‌గా gTTS బ్యాకప్ వాడుతుంది
+        try:
+            tts = gTTS(text=text, lang='te')
+            tts.save(final_file)
+        except Exception as gtts_err:
+            await msg.edit_text(f"❌ Error వచ్చింది: {str(gtts_err)}")
+            return
 
-        for i, chunk in enumerate(chunks):
-            communicate = edge_tts.Communicate(chunk, voice)
-            file_name = f"temp_{user_id}_{i}.mp3"
-            await communicate.save(file_name)
-            audio_files.append(file_name)
-
-        final_file = f"final_{user_id}.mp3"
-        with open(final_file, "wb") as outfile:
-            for f in audio_files:
-                if os.path.exists(f):
-                    with open(f, "rb") as infile:
-                        outfile.write(infile.read())
-                    os.remove(f)
-
+    try:
         with open(final_file, "rb") as audio_fp:
             await update.message.reply_audio(
                 audio=audio_fp,
                 title="Telugu Story",
-                performer="TTS Bot"
+                performer="STORYMAX"
             )
 
         if os.path.exists(final_file):
@@ -101,8 +100,10 @@ async def text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Error వచ్చింది: {str(e)}")
 
 def main():
+    # Flask ను బ్యాక్‌గ్రౌండ్ థ్రెడ్‌లో నడపడం
     threading.Thread(target=run_flask, daemon=True).start()
 
+    # బాట్ అప్లికేషన్ స్టార్ట్ చేయడం
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(voice_callback))

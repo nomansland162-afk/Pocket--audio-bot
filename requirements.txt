@@ -1,5 +1,4 @@
 pyTelegramBotAPI
-pydub
 openai-whisper
-torch
+audioop-lts
 flask

@@ -1,10 +1,10 @@
 import os
 import time
 import threading
+import subprocess
 from flask import Flask
 import telebot
 import whisper
-from pydub import AudioSegment
 
 # 1. Railway Keep-Alive Web Server
 app = Flask(__name__)
@@ -18,7 +18,7 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 # 2. Telegram Bot Configuration
-BOT_TOKEN = "9089667063:AAGiLVW9zdSWuqyTn1YMeTAcGIzH6B-YP-Y"
+BOT_TOKEN = "9193746618:AAHD9wKgTXligMSuGIKDmNm3PsTVArf5QdE"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 # Whisper Model Load Cheyadam
@@ -31,7 +31,7 @@ user_data = {}
 def start_cmd(message):
     text = (
         "🎙️ *Seamless Audio Word Remover Bot!*\n\n"
-        "Audio nunchi unwanted word ni theesi smooth ga kaluputhundi:\n\n"
+        "Audio nunchi unwanted word ni theesi audio flow miss avvakunda join chesthundhi:\n\n"
         "1. Mundu oka **Audio** leda **Voice Note** pampandi.\n"
         "2. Tarvata e audio lo ye word theeseyalo aa word ni type cheyandi.\n"
         "3. Bot aa word ni cut chesi clean continuous audio ni pampisthundi!"
@@ -84,6 +84,14 @@ def handle_audio(message):
             message_id=status.message_id
         )
 
+def get_audio_duration(file_path):
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", file_path
+    ]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return float(res.stdout.strip())
+
 @bot.message_handler(func=lambda msg: msg.text and not msg.text.startswith('/'))
 def process_word_cut(message):
     chat_id = message.chat.id
@@ -108,9 +116,9 @@ def process_word_cut(message):
                 cleaned_w = w["word"].strip().lower()
                 cleaned_w = "".join([ch for ch in cleaned_w if ch.isalnum()])
                 if cleaned_w == word_to_remove:
-                    start_ms = max(0, int(w["start"] * 1000) - 35)
-                    end_ms = int(w["end"] * 1000) + 35
-                    intervals_to_cut.append((start_ms, end_ms))
+                    start_s = max(0.0, float(w["start"]) - 0.04)
+                    end_s = float(w["end"]) + 0.04
+                    intervals_to_cut.append((start_s, end_s))
 
         if not intervals_to_cut:
             bot.edit_message_text(
@@ -121,41 +129,59 @@ def process_word_cut(message):
             return
 
         bot.edit_message_text(
-            f"✂️ '{word_to_remove}' ({len(intervals_to_cut)} sarlu) cut chesi smooth ga join chesthunnam...",
+            f"✂️ '{word_to_remove}' ({len(intervals_to_cut)} places lo) cut chesi smooth ga join chesthunnam...",
             chat_id=chat_id,
             message_id=status.message_id
         )
 
-        # 2. AudioSegment tho seamless cut & crossfade
-        sound = AudioSegment.from_file(raw_audio_path)
+        total_dur = get_audio_duration(raw_audio_path)
         
-        kept_pieces = []
-        prev_end = 0
-        for start_ms, end_ms in intervals_to_cut:
-            if start_ms > prev_end:
-                kept_pieces.append(sound[prev_end:start_ms])
-            prev_end = max(prev_end, end_ms)
+        # 2. Segments split intervals calculate cheyadam
+        kept_segments = []
+        prev_end = 0.0
+        for s_start, s_end in intervals_to_cut:
+            if s_start > prev_end:
+                kept_segments.append((prev_end, s_start))
+            prev_end = max(prev_end, s_end)
             
-        if prev_end < len(sound):
-            kept_pieces.append(sound[prev_end:])
+        if prev_end < total_dur:
+            kept_segments.append((prev_end, total_dur))
 
-        final_sound = kept_pieces[0]
-        for piece in kept_pieces[1:]:
-            if len(final_sound) > 30 and len(piece) > 30:
-                final_sound = final_sound.append(piece, crossfade=20)
-            else:
-                final_sound = final_sound + piece
+        # 3. FFmpeg tho prathi segment ni trim chesi merge cheyadam
+        seg_files = []
+        for idx, (st, en) in enumerate(kept_segments):
+            dur = en - st
+            if dur <= 0.05:
+                continue
+            seg_out = os.path.join(user_dir, f"part_{idx}.mp3")
+            cmd = [
+                "ffmpeg", "-y", "-ss", str(st), "-t", str(dur),
+                "-i", raw_audio_path, "-c", "copy", seg_out
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(seg_out):
+                seg_files.append(seg_out)
 
-        clean_output_path = os.path.join(user_dir, "clear_cut_audio.mp3")
-        final_sound.export(clean_output_path, format="mp3", bitrate="192k")
+        # Segments list file
+        concat_list = os.path.join(user_dir, "concat.txt")
+        with open(concat_list, "w") as f:
+            for sf in seg_files:
+                f.write(f"file '{os.path.abspath(sf)}'\n")
 
-        # 3. Clean audio send cheyadam
+        clean_output_path = os.path.join(user_dir, "clean_audio.mp3")
+        concat_cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", concat_list, "-c", "copy", clean_output_path
+        ]
+        subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # 4. Clean audio send cheyadam
         with open(clean_output_path, 'rb') as af:
             bot.send_audio(
                 chat_id=chat_id,
                 audio=af,
                 title="Seamless Clean Audio",
-                caption=f"✅ '{word_to_remove}' cut aipoindi! Continuous audio ready."
+                caption=f"✅ '{word_to_remove}' word cut aipoindi! Continuous audio ready."
             )
 
         bot.delete_message(chat_id, status.message_id)

@@ -1,3 +1,5 @@
 pyTelegramBotAPI
-edge-tts>=6.1.12
+pydub
+openai-whisper
+torch
 flask
